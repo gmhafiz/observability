@@ -70,4 +70,4 @@ k6 run load-test.js
 
 # Blog Post
 
-This repository accompanies the blog post at https://gmhafiz.com/blog
+This repository accompanies the blog post at https://www.gmhafiz.com/blog/observability/
