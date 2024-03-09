@@ -1,0 +1,3 @@
+### GET request
+GET http://localhost:3080/uuid
+Accept: application/json

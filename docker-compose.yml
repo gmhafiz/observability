@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+
+  go-api:
+    image: go_image
+    env_file:
+      - .env
+    container_name: "go_container"
+    build:
+      context: go
+      dockerfile: Dockerfile
+    ports:
+      - ${GO_PORT}:3080
+    depends_on:
+      - postgres
+      - otel-collector
+
+  postgres:
+    image: postgres:16.2
+    restart: "no"
+    healthcheck:
+      test: pg_isready -U ${DB_USER}
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
+#    ports:
+#      - "5432:5432"
+    volumes:
+      - postgresVolume:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  java-api:
+    image: java_image
+    container_name: "java_container"
+    env_file:
+      - .env
+    build:
+       context: java
+       dockerfile: Dockerfile
+#    ports:
+#      - "8080:8080"
+    depends_on:
+      - postgres
+      - otel-collector
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_IMG}
+    restart: "no"
+    volumes:
+      - grafanaVolume:/var/lib/grafana
+      - ./opentelemetry/provisioning:/etc/grafana/provisioning
+      - ./opentelemetry/dashboards:/etc/grafana/dashboards
+    ports:
+      - ${GRAFANA_PORT}:3000
+
+  otel-collector:
+    image: ${OTELCOL_IMG}
+    restart: "no"
+    command: ["--config=/etc/otel-collector-config.yaml", "${OTELCOL_ARGS}"]
+    volumes:
+      - ./opentelemetry/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+#      - "1888:1888"   # pprof extension
+#      - "8888:8888"   # Prometheus metrics exposed by the collector
+      - ${OTEL_COLLECTOR_PORT}:8889   # Prometheus exporter metrics
+#      - "13133:13133" # health_check extension
+#      - "4317:4317"   # OTLP gRPC receiver.
+#      - "4318:4318"   # OTLP http receiver
+#      - "55679:55679" # zpages extension
+
+  prometheus:
+    image: prom/prometheus:${PROM_IMG}
+    restart: "no"
+    volumes:
+      - ./opentelemetry/prometheus.yaml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--enable-feature=exemplar-storage'
+    ports:
+      - ${PROMETHEUS_PORT}:9090
+
+  jaeger-all-in-one:
+    image: jaegertracing/all-in-one:${JAEGER_IMG}
+    restart: "no"
+    ports:
+#      - "16685:16685"
+      - ${JAEGER_PORT}:16686
+#      - "14268"
+#      - "14250"
+
+  loki:
+    image: grafana/loki:${LOKI_IMG}
+    restart: "no"
+    volumes:
+      - lokiVolume:/data/loki
+      - ./opentelemetry/loki-config.yaml:/etc/loki/local-config.yaml
+#    ports:
+#      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:${PROMTAIL_IMG}
+    restart: "no"
+    volumes:
+      - ./opentelemetry/promtail-config.yaml:/etc/promtail/promtail-config.yaml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/promtail-config.yaml
+
+
+  node_exporter:
+    image: quay.io/prometheus/node-exporter:${NODE_EXPORTER_IMG}
+    container_name: node_exporter
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    expose:
+      - 9100
+
+
+volumes:
+  postgresVolume:
+  grafanaVolume:
+  lokiVolume:

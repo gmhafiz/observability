@@ -1,0 +1,65 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+
+exporters:
+  prometheus:
+    endpoint: otel-collector:8889
+
+  debug:
+    verbosity: detailed
+#    endpoint: "http://loki:3100/loki/api/v1/push"
+#    labels:
+#      attributes:
+#        container_name: ""
+#        container_id: ""
+
+  #  loki:
+  #    endpoint: http://loki:3100/loki/api/v1/push
+  #    default_labels_enabled:
+  #      exporter: false
+  #      job: true
+
+  otlp:
+    endpoint: jaeger-all-in-one:4317
+    tls:
+      insecure: true
+    retry_on_failure:
+      enabled: true
+    sending_queue:
+      enabled: false
+
+processors:
+  # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor
+  batch:
+
+  memory_limiter:
+    # 80% of maximum memory up to 2G
+    limit_mib: 4000
+    # 25% of limit up to 2G
+    spike_limit_mib: 1000
+    check_interval: 5s
+
+extensions:
+  health_check:
+  pprof:
+    endpoint: :1888
+  zpages:
+    endpoint: :55679
+
+service:
+  extensions: [pprof, zpages, health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch, memory_limiter]
+      exporters: [debug, otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [batch, memory_limiter]
+      exporters: [debug, prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [batch, memory_limiter]
+      exporters: [debug]
